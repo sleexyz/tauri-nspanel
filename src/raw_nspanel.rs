@@ -42,9 +42,9 @@ impl INSObject for RawNSPanel {
 }
 
 impl RawNSPanel {
-    /// Returns YES to ensure that RawNSPanel can become a key window
-    extern "C" fn can_become_key_window(_: &Object, _: Sel) -> BOOL {
-        YES
+    extern "C" fn can_become_key_window(this: &Object, _: Sel) -> BOOL {
+        let key_window_able: BOOL = unsafe { *this.get_ivar("key_window_able") };
+        return key_window_able;
     }
 
     extern "C" fn dealloc(this: &mut Object, _cmd: Sel) {
@@ -56,15 +56,41 @@ impl RawNSPanel {
         }
     }
 
+    extern "C" fn awake_from_nib(this: &mut Object, _cmd: Sel) {
+        unsafe {
+            let super_class = msg_send![this, superclass];
+            let () = msg_send![super(this, super_class), awakeFromNib];
+            let () = msg_send![this, setBecomesKeyOnlyIfNeeded:YES];
+            let () = this.set_ivar("key_window_able", NO); // Set default value for key_window_able
+        }
+    }
+
+    extern "C" fn set_key_window_able_inner(this: &mut Object, _: Sel, flag: BOOL) {
+        unsafe { this.set_ivar("key_window_able", flag) };
+    }
+
     fn define_class() -> &'static Class {
         let mut cls = ClassDecl::new(CLS_NAME, class!(NSPanel))
             .unwrap_or_else(|| panic!("Unable to register {} class", CLS_NAME));
 
         unsafe {
+cls.add_ivar::<BOOL>("key_window_able");
+
             cls.add_method(
                 sel!(canBecomeKeyWindow),
                 Self::can_become_key_window as extern "C" fn(&Object, Sel) -> BOOL,
             );
+
+            cls.add_method(
+                sel!(setKeyWindowAble:),
+                Self::set_key_window_able_inner as extern "C" fn(&mut Object, Sel, BOOL),
+            );
+
+            cls.add_method(
+                sel!(awakeFromNib), 
+                Self::awake_from_nib as extern "C" fn(&mut Object, Sel)
+            );
+
 
             cls.add_method(
                 sel!(dealloc),
@@ -73,6 +99,12 @@ impl RawNSPanel {
         }
 
         cls.register()
+    }
+
+    pub fn set_key_window_able(&self, flag: bool) {
+        let _: () = unsafe { 
+            msg_send![self, setKeyWindowAble: if flag {YES} else {NO}]
+        };
     }
 
     pub fn show(&self) {
